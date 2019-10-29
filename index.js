@@ -1,13 +1,11 @@
+const fs = require('fs')
 const readline = require('readline');
 const charset = require('superagent-charset');
 const request = charset(require('superagent'));
-const fs = require('fs')
-
 const cheerio = require('cheerio');
-const axios = require('axios')
-const Koa = require('koa')
 const async = require('async')
-const app = new Koa()
+
+
 // 延迟请求标识
 let k = 4;
 let g = 2000;
@@ -74,9 +72,11 @@ String.prototype.getUrl = async function (callback) {
 }
 
 // ================================获取音频=======================================
-let getAudio = function (callback) {
+let downloadAudio = function (callback) {
 	console.log('需要请求的数量',filterUrlArr.length)
+	//使用 setInterval 控制访问速度
 	var intervalIDS = []
+	//遍历所有音频URL
 	filterUrlArr.forEach((item,index)=>{
 		var id = setTimeout(()=>{
 			let urlItem = item.split('-----')[0];
@@ -103,9 +103,9 @@ let getAudio = function (callback) {
 }
 // --------------------------获取 音频文件 audio------------------------------------
 String.prototype.getAudioUrl = async function (callback) {
-	console.log('到这了1')
 	let type = ['.wav','.mp3','.au','.aif'];
 	await new Promise((resolve, reject)=>{
+		// 防抖 利用promise阻塞代码
 		let intervalID = setInterval(()=>{
 			if (GET_AUDIO_URLS < 0) {
 				resolve();
@@ -120,6 +120,7 @@ String.prototype.getAudioUrl = async function (callback) {
 			await request
 			.get(url.split('-----')[0])
 			// .send({keywords: animalName, Search: 'search'})
+			// 必须附带请求头 否则无法获取数据
 			.set('Accept','text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3')
 			.set('Accept-Encoding','gzip, deflate')
 			.set('Accept-Language','zh-CN,zh;q=0.9')
@@ -131,21 +132,23 @@ String.prototype.getAudioUrl = async function (callback) {
 			.set('User-Agent','Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.120 Safari/537.36')
 			.set('buffer','true')
 			.then((res)=>{
+				//阻塞标识
 				GET_AUDIO_URLS = 10;
+
+				//从请求到的页面解析出音频url
 				let str1 = res.text.substring(res.text.indexOf('<script type="text/javascript">hit'))
 				str1 = str1.substring(0,str1.indexOf('</script>'))
-
 				let audioUrls = str1.replace('<script type="text/javascript">','').replace(/"/g,'').split(',').filter((item)=>{
 					return item.length > 30 && (item.indexOf(type[0]) > 0 || item.indexOf(type[1]) > 0 || item.indexOf(type[2]) > 0 || item.indexOf(type[3]) > 0)
 				});
+
+				//当没有数据时，进行POST请求 
 				if (audioUrls.length === 0) {
-					// url.postAudioUrl();
+					url.postAudioUrl();
 					return false;
 				}
-				console.log('get-url总数量：',getSum+=audioUrls.length);
-				console.log('post-url总数量：',postSum);
-				console.log('总数量：',getSum+postSum);
-				console.log('长度',filterUrlArr.length);
+
+				//由于有些URL字符串不带协议或者不带www的为它补全
 				audioUrls = audioUrls.map((item)=>{
 					if (item == '') return false;
 					let itemA = item;
@@ -166,7 +169,7 @@ String.prototype.getAudioUrl = async function (callback) {
 						return `${itemA}-----${animalName}-----${animalNameChina}`; 
 					}
 				}).rmduplicateAudios();
-
+				//保存去重 扁平后的url
 				filterUrlArr.push(...audioUrls);
 				filterUrlArr = filterUrlArr.myflat(2).rmduplicate();
 			}).catch(error => console.log('caught', error))
@@ -248,25 +251,30 @@ String.prototype.postAudioUrl = function () {
 async function readName (callback) {
 	await new Promise(function (resolve,reject){
 		fs.readFile("./animal.txt", "utf-8", function(error, data) {
-			console.log("data.split('\r\n')[0]data.split('\r\n')[0]data.split('\r\n')[0]=============");
 			for (let i = 0; i<data.split('\r\n').length; i++) {
 				lines.push(data.split('\r\n')[i])				
 			}
-			lines = lines.rmduplicate()
+			lines = lines.rmduplicate();//工具类 动物名去重
 			resolve();
 		})
 	})
 	console.log('总共 '+ lines.length +' 个动物');
 }
 
-// ----------------------主入口-----------------
-async.series([readName,''.getUrl,''.getAudioUrl,getAudio],function (err,result) {
+
+// ----------------------程序主入口-----------------
+//例如async的series()函数，readName、''.getUrl、''.getAudioUrl、downloadAudio依次执行
+async.series([readName,''.getUrl,''.getAudioUrl,downloadAudio],function (err,result) {
 	if (err || err === 'err') {
 		console.log('err---',err);
 	} else {
 		console.log('result',result);
 	}
 })
+
+
+
+
 
 
 // --------------------工具类------------------------
@@ -362,6 +370,7 @@ Object.defineProperty(Array.prototype, 'myflat',{
 	}
 })
 
+// 封装自己的appendageFile()
 function myAppendFile (fileName, data, msg) {
 	return (function(){
 		fs.appendFile(fileName, data, function (err) {
